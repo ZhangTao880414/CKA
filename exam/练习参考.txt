@@ -1,0 +1,286 @@
+注意
+注意
+注意
+一、中文题目中出现的路径有可能找不到，切换成英文题目看看路径在不在(比如中文可能是/tmp/Abc/1.txt,英文是/tmp/abc/1.txt)
+二、23题排查，如果kubectl提示连不上6443，并且在master和node上
+执行
+ps -eF|grep -P 'control|apiserver|schedul'
+systemctl list-unit-files |grep kube
+没有任何记录，这一题果断放弃，可能这个环境有问题(当时情况花了40多分钟没找出问题)
+三、很多路径可能是root权限，重定向文件时命令前面加上sudo
+四、多节点故障排查时可以用tmux方便终端切换(不会用tmux,这个建议可以忽略)
+五、yml快速参考可以使用kubectl explain pod和kubectl explain pod --recursive
+六、每题开始先进行config切换
+
+1.
+以kube-flannel-ds-67l79 pod为例，查询iptables关键字
+kubectl -n kube-system logs kube-flannel-ds-67l79|grep 'iptables' >/tmp/1.txt
+
+2.
+按照creationTimestamp排序
+kubectl get pods --all-namespaces  --sort-by='{.metadata.creationTimestamp}'
+
+3.
+https://kubernetes.io/docs/文档搜索daemonset，有链接页面找到example改写
+---
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: ds.kusc00201
+spec:
+  selector:
+    matchLabels:
+      name: ds.kusc00201
+  template:
+    metadata:
+      labels:
+        name: ds.kusc00201
+    spec:
+      containers:
+      - name: nginx
+        image: nginx
+
+
+4.
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: hungry-bear
+spec:
+  volumes:
+  - name: workdir
+    emptyDir: {}
+  containers:
+  - name: checker
+    image: busybox
+    command: ["/bin/sh", "-c", "if [ -f /workdir/faithful.txt ] ; then sleep 100000; else exit 1; fi"]
+    volumeMounts:
+    - name: workdir
+      mountPath: /workdir
+  initContainers:
+  - name: init-c
+    image: busybox
+    command: ["/bin/sh", "-c", "touch /workdir/faithful.txt"]
+    volumeMounts:
+    - name: workdir
+      mountPath: /workdir
+
+
+5.
+生成yaml文件的命令，再在此基础上改写
+kubectl run kucc4 --image=nginx --generator=run-pod/v1 --dry-run -o yaml >5.yml
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  labels:
+    run: kucc4
+  name: kucc4
+spec:
+  containers:
+  - image: nginx
+    name: nginx
+  - image: redis
+    name: redis
+
+
+6.
+先检查下节点标签
+生成yaml文件的命令，再在此基础上改写
+kubectl run nginx-kusc00101 --image=nginx --generator=run-pod/v1 --dry-run -o yaml >6.yml
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  labels:
+    run: nginx-kusc00101
+  name: nginx-kusc00101
+spec:
+  nodeSelector:
+    disk: ssd
+  containers:
+  - image: nginx
+    name: nginx
+
+
+
+7.
+kubectl run nginx-app --image=nginx:1.11.9-alpine --replicas=3 --dry-run -o yaml >7.yml
+kubectl apply -f 7.yml
+kubectl set image deploy nginx-app nginx-app=nginx:1.12.0-alpine --record
+kubectl rollout undo deployment nginx-app
+
+
+8.
+kubectl expose pod front-end --name=front-end-svc --port=80  --type=NodePort
+
+9.
+kubectl create ns website-fronted
+kubectl run jenkins --image=jenkins --generator=run-pod/v1 --dry-run -o yaml >9.yml
+kubectl -n website-fronted apply -f 9.yml
+
+
+10.
+kubectl run kual00201 --image=redis --labels=app_env_stage=dev --replicas=7 --dry-run -o yaml >10.yml
+kubectl apply -f 10.yml
+kubectl delete -f 10.yml
+
+11.
+kubectl get svc kucc4-svc -o yaml
+selector is "app: kucc4"
+kubectl get pods --all-namespaces -l app=kucc4 -o name|awk -F'/' '{print $2}'
+
+12.
+生成secret参考命令
+kubectl create secret generic super-secret --from-literal=username=bob  --from-literal=credential=alice
+生成yaml文件的命令，再在此基础上改写(可以在https://kubernetes.io/docs/页面搜索框输入volumes查询example)
+kubectl run pod-secrets-via-file --image=redis --generator=run-pod/v1 --dry-run -o yaml >12-1.yml
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  creationTimestamp: null
+  labels:
+    run: pod-secrets-via-file
+  name: pod-secrets-via-file
+spec:
+  volumes:
+  - name: super-secret
+    secret:
+      secretName: super-secret
+  containers:
+  - image: redis
+    name: pod-secrets-via-file
+    resources: {}
+    volumeMounts:
+    - name: super-secret
+      mountPath: /secrets
+  dnsPolicy: ClusterFirst
+  restartPolicy: Always
+status: {}
+
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  creationTimestamp: null
+  labels:
+    run: pod-secrets-via-env
+  name: pod-secrets-via-env
+spec:
+  volumes:
+  - name: super-secret
+    secret:
+      secretName: super-secret
+  containers:
+  - image: redis
+    name: pod-secrets-via-env
+    resources: {}
+    env:
+    - name: CREDENTIALS
+      valueFrom:
+        secretKeyRef:
+          name: super-secret
+          key: username
+    - name: TOPSECRET
+      valueFrom:
+        secretKeyRef:
+          name: super-secret
+          key: credential
+  dnsPolicy: ClusterFirst
+  restartPolicy: Always
+status: {}
+
+
+
+
+
+13.
+kubectl create ns pre-prod
+kubectl run non-persistent-redis  --image=redis --generator=run-pod/v1 --dry-run -o yaml >13.yml
+kubectl apply -f 13.yml
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  creationTimestamp: null
+  labels:
+    run: non-persistent-redis
+  name: non-persistent-redis
+spec:
+  volumes:
+  - name: cache-control
+    emptyDir: {}
+  containers:
+  - image: redis
+    name: non-persistent-redis
+    resources: {}
+    volumeMounts:
+    - name: cache-control
+      mountPath: /data/redis
+  dnsPolicy: ClusterFirst
+  restartPolicy: Always
+status: {}
+
+kubectl -n pre-prod apply -f 13.yml
+
+
+14.
+kubectl scale --replicas=7 deployment nginx-app
+
+15.
+kubectl get nodes -o wide|grep -i Ready|wc -l
+kubectl get nodes -o yaml|grep -i Taints|wc -l
+答案为第一个减去第二个
+
+16.
+kubectl -n kube-system top pod -l app=flannel
+
+17.
+kubectl run nginx-dns --image=nginx --expose --port=80
+kubectl run tools --image=busybox:1.28 --rm -it -- sh
+nslookup nginx-dns
+nslookup 172-20-1-145.default.pod.cluster.local
+
+18.
+etcdctl的用法
+export ETCDCTL_API=3
+etcdctl --cacert=/etc/kubernetes/ssl/ca.pem --cert=/etc/kubernetes/ssl/kubernetes.pem --key=/etc/kubernetes/ssl/kubernetes-key.pem --endpoints=https://192.168.1.1:2379  snapshot save /tmp/etcd.dump
+19.
+kubectl drain 172.16.161.52 --ignore-daemonsets --delete-local-data --force
+
+20.
+systemctl的操作
+systemctl enable kubele
+systemctl start kubele
+
+21.
+system脚本添加下面参数
+--pod-manifest-path=/etc/kubernetes/manifests
+使用下面的参考命令生成pod文件
+kubectl run myservice --image=nginx --generator=run-pod/v1 --dry-run -o yaml >21.yml
+重启服务
+systemctl start kubele
+
+22.
+搭建节点参考https://suraj.io/post/add-new-k8s-node-cert-rotate/
+
+23.
+kubectl get cs
+找到相关服务重启
+
+24.
+https://kubernetes.io/docs/上搜索PersistentVolume
+---
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: app-config
+spec:
+  capacity:
+    storage: 1Gi
+  accessModes:
+    - ReadWriteOnce
+  hostPath:
+    path: /srv/app-config
